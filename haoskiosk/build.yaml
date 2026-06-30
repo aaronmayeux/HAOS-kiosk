@@ -1,0 +1,2 @@
+yamlargs:
+  BUILD_BROWSER: "chromium"
