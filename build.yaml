@@ -1,0 +1,3 @@
+---
+args:
+  BUILD_BROWSER: chromium

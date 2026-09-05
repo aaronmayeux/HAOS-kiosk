@@ -1,0 +1,10 @@
+# Keep the Supervisor build context lean. Nothing here is COPYed by the
+# Dockerfile -- every COPY in it is explicit and named.
+.git
+.gitignore
+.dockerignore
+__pycache__
+*.pyc
+*.bak
+*.bak.*
+*.bak[0-9].*

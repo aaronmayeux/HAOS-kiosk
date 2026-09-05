@@ -1,0 +1,6 @@
+# Wall deploy branch -- box-local artefacts, never committed.
+__pycache__/
+*.pyc
+*.bak
+*.bak.*
+*.bak[0-9].*
