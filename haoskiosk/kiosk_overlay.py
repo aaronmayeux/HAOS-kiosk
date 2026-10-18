@@ -76,7 +76,40 @@ def evaluate(wsurl, expr):
 def page_info():
     ts=json.load(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json", timeout=3))
     p=next((t for t in ts if t.get("type")=="page"), None)
-    return (p.get("url","") if p else "", p.get("webSocketDebuggerUrl","") if p else "")
+    return (p.get("url","") if p else "", p.get("webSocketDebuggerUrl","") if p else "",
+            p.get("id","") if p else "", ts)
+
+# Orphan-page sweep. A kiosk-out page that opens a new window (Maps, a shop site)
+# leaves the previous page alive behind it, and the back button only re-points the
+# CURRENT page - so stray pages pile up, and a second dashboard doubles every camera
+# decode. Once the active page has been on the dashboard for SWEEP_SETTLE_S, close
+# every OTHER page, at most every SWEEP_EVERY_S. Never fires while browsing.
+SWEEP_SETTLE_S = 5
+SWEEP_EVERY_S  = 10
+_sweep = {"tid": None, "since": 0.0, "last": 0.0}
+
+def sweep_orphans(ts, tid, url):
+    now = time.time()
+    if _sweep["tid"] != tid:          # new active page: its settle clock starts now,
+        _sweep["tid"] = tid           # not inherited from the page it replaced
+        _sweep["since"] = 0.0
+    if not tid or not url.startswith(DASH_URL):
+        _sweep["since"] = 0.0
+        return
+    if not _sweep["since"]:
+        _sweep["since"] = now
+        return
+    if now - _sweep["since"] < SWEEP_SETTLE_S or now - _sweep["last"] < SWEEP_EVERY_S:
+        return
+    _sweep["last"] = now
+    for t in ts:
+        if t.get("type") != "page" or not t.get("id") or t.get("id") == tid:
+            continue
+        try:
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/json/close/{t['id']}", timeout=3).read()
+            print("[overlay] closed orphan page:", (t.get("url") or "")[:100], flush=True)
+        except Exception:
+            pass
 
 # wait for the debug port, then watch + inject
 for _ in range(60):
@@ -86,7 +119,8 @@ for _ in range(60):
     time.sleep(1)
 while True:
     try:
-        url, wsurl = page_info()
+        url, wsurl, tid, ts = page_info()
+        sweep_orphans(ts, tid, url)
         if wsurl and url.startswith(("http://","https://")) and not url.startswith(DASH_URL):
             res = evaluate(wsurl, INJECT)
             val = ((res or {}).get('result') or {}).get('result', {}).get('value')

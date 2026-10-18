@@ -8,6 +8,11 @@
   `refresh_browser` use CDP instead of the luakit `-n`/xdotool paths.
 - Added `cdp_auth.py` (self-healing login via the `trusted_networks` loopback)
   and `kiosk_overlay.py` (in-page back-to-dashboard button on kiosk-out pages).
+- `kiosk_overlay.py` closes orphaned pages: a kiosk-out site that opens a new
+  window left the previous page alive behind it (stray pages, or a second
+  dashboard doubling camera decodes). Once the dashboard has been showing for
+  5 s, every other page is closed, at most every 10 s. Never fires while
+  browsing.
 - Added a Chromium managed policy to suppress the first-run sign-in prompt.
 - Motivation: WebKitGTK (luakit) hard-hangs some Intel GPUs (e.g. Iris Xe -
   kernel `i915` GPU HANG); Chromium renders cleanly on that hardware.
