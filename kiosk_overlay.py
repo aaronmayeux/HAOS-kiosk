@@ -586,6 +586,9 @@ def sweep_orphans(o, tid):
         u = json.loads(val).get("u") if val else ""
     except Exception:
         return
+    if _sweep.get("tid") != tid:
+        _sweep["tid"] = tid  # new page attached: its 5 s on the Wall starts now,
+        _sweep["since"] = 0.0  # not inherited from the page it replaced
     now = time.time()
     if not on_wall_url(u):
         _sweep["since"] = 0.0
