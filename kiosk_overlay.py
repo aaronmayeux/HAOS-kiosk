@@ -37,6 +37,7 @@ import os
 import socket
 import struct
 import time
+import urllib.parse
 import urllib.request
 
 HA    = os.environ.get("HA_URL", "http://127.0.0.1:8123").rstrip("/")
@@ -466,6 +467,7 @@ def session():
                                 script_id[0] = (o.get("result") or {}).get("identifier")
                             elif tag == "drain":
                                 bms = on_drain(o, bms, send, arm, script_id)
+                                sweep_orphans(o, tid)
                             elif tag in ("nav:back", "nav:forward"):
                                 step_history(o, tag, send)
 
@@ -545,6 +547,67 @@ def apply_bm(bms, ops, send, arm, script_id):
             script_id[0] = None
         arm(bms)
     return bms
+
+
+# --------------------------------------------------------------------------- #
+# Orphan sweep -- close the pages left behind a kiosk-out
+# --------------------------------------------------------------------------- #
+# A kiosk-out that opens a new window (target=_blank, window.open) leaves the
+# old page alive behind the new one, and WALL only re-points the CURRENT page
+# at the dashboard. Each trip leaks a page that keeps running scripts, maps and
+# chat widgets in the background -- nine of them were found on 2026-10-18,
+# eating CPU the camera decode needs. Rule: once the attached (visible) page
+# has sat on the Wall dashboard for SWEEP_SETTLE_S, close every OTHER page
+# target. It only ever fires while the Wall is showing, so it cannot close a
+# site someone is actually browsing. Fed by the 1s drain reply (which already
+# carries location.href), so it costs no extra CDP round-trip.
+SWEEP_SETTLE_S = 5
+SWEEP_EVERY_S = 10
+_sweep = {"since": 0.0, "last": 0.0}
+
+
+def on_wall_url(u):
+    if not DASH:
+        return False
+    try:
+        sp = urllib.parse.urlsplit(u or "")
+    except Exception:
+        return False
+    if sp.hostname not in ("127.0.0.1", "localhost"):
+        return False
+    path = sp.path.rstrip("/")
+    want = "/" + DASH.strip("/")
+    return path == want or path.startswith(want + "/")
+
+
+def sweep_orphans(o, tid):
+    try:
+        val = (((o.get("result") or {}).get("result")) or {}).get("value")
+        u = json.loads(val).get("u") if val else ""
+    except Exception:
+        return
+    now = time.time()
+    if not on_wall_url(u):
+        _sweep["since"] = 0.0
+        return
+    if not _sweep["since"]:
+        _sweep["since"] = now
+        return
+    if now - _sweep["since"] < SWEEP_SETTLE_S or now - _sweep["last"] < SWEEP_EVERY_S:
+        return
+    _sweep["last"] = now
+    try:
+        ts = json.load(urllib.request.urlopen("http://127.0.0.1:%d/json" % PORT, timeout=3))
+    except Exception:
+        return
+    for t in ts:
+        if t.get("type") != "page" or not t.get("id") or t.get("id") == tid:
+            continue
+        try:
+            urllib.request.urlopen("http://127.0.0.1:%d/json/close/%s" % (PORT, t["id"]), timeout=3).read()
+            print("[overlay] closed orphan page: %s" % (t.get("url") or "")[:100], flush=True)
+        except Exception:
+            pass
 
 
 def on_binding(o, bms, send, arm, script_id):
